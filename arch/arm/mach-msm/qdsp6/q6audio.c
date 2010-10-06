@@ -1541,14 +1541,16 @@ struct audio_client *q6audio_open_pcm(uint32_t bufsz, uint32_t rate,
 
 	if (ac->flags & AUDIO_FLAG_WRITE) {
 		if (audio_rx_path_refcount == 1) {
-#ifndef CONFIG_MSM_QDSP6_CALLREC
-			adie_enable();
-			adie_set_path(adie, audio_rx_path_id, ADIE_PATH_RX);
-			adie_set_path_freq_plan(adie, ADIE_PATH_RX, 48000);
+			if (audio_rx_path_id) {
+				adie_enable();
+				adie_set_path(adie, audio_rx_path_id, ADIE_PATH_RX);
+				adie_set_path_freq_plan(adie, ADIE_PATH_RX, 48000);
 
-			adie_proceed_to_stage(adie, ADIE_PATH_RX, ADIE_STAGE_DIGITAL_READY);
-			adie_proceed_to_stage(adie, ADIE_PATH_RX, ADIE_STAGE_DIGITAL_ANALOG_READY);
-
+				adie_proceed_to_stage(adie, ADIE_PATH_RX,
+						ADIE_STAGE_DIGITAL_READY);
+				adie_proceed_to_stage(adie, ADIE_PATH_RX,
+						ADIE_STAGE_DIGITAL_ANALOG_READY);
+			}
 #endif
 			audio_rx_analog_enable(1);
 		}

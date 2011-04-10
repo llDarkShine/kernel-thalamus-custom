@@ -31,6 +31,11 @@
 
 #define DEF_FREQUENCY_UP_THRESHOLD		(80)
 #define DEF_FREQUENCY_DOWN_THRESHOLD		(20)
+#define DEF_FREQUENCY_DOWN_DIFFERENTIAL		(10)
+#define MICRO_FREQUENCY_MIN_SAMPLE_RATE		(10000)
+#define MICRO_FREQUENCY_DOWN_DIFFERENTIAL	(3)
+#define MICRO_FREQUENCY_UP_THRESHOLD		(95)
+#define MICRO_FREQUENCY_DOWN_THRESHOLD		(50)
 
 /*
  * The polling frequency of this governor depends on the capability of
@@ -88,11 +93,13 @@ static struct dbs_tuners {
 	unsigned int sampling_down_factor;
 	unsigned int up_threshold;
 	unsigned int down_threshold;
+	unsigned int down_differential;
 	unsigned int ignore_nice;
 	unsigned int freq_step;
 } dbs_tuners_ins = {
 	.up_threshold = DEF_FREQUENCY_UP_THRESHOLD,
 	.down_threshold = DEF_FREQUENCY_DOWN_THRESHOLD,
+	.down_differential = DEF_FREQUENCY_DOWN_DIFFERENTIAL,
 	.sampling_down_factor = DEF_SAMPLING_DOWN_FACTOR,
 	.ignore_nice = 0,
 	.freq_step = 5,
@@ -428,7 +435,8 @@ static struct attribute_group dbs_attr_group_old = {
 static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 {
 	unsigned int load = 0;
-	unsigned int max_load = 0;
+	unsigned int load_freq = 0;
+	unsigned int max_load_freq = 0;
 	unsigned int freq_target;
 
 	struct cpufreq_policy *policy;
@@ -452,6 +460,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		struct cpu_dbs_info_s *j_dbs_info;
 		cputime64_t cur_wall_time, cur_idle_time;
 		unsigned int idle_time, wall_time;
+		int freq_avg;
 
 		j_dbs_info = &per_cpu(cs_cpu_dbs_info, j);
 
@@ -487,8 +496,13 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 
 		load = 100 * (wall_time - idle_time) / wall_time;
 
-		if (load > max_load)
-			max_load = load;
+		freq_avg = __cpufreq_driver_getavg(policy, j);
+		if (freq_avg <= 0)
+			freq_avg = policy->cur;
+
+		load_freq = load * freq_avg;
+		if (load_freq > max_load_freq)
+			max_load_freq = load_freq;
 	}
 
 	/*
@@ -499,7 +513,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		return;
 
 	/* Check for frequency increase */
-	if (max_load > dbs_tuners_ins.up_threshold) {
+	if (max_load_freq > (dbs_tuners_ins.up_threshold * policy->cur)) {
 		this_dbs_info->down_skip = 0;
 
 		/* if we are already at full speed then break out early */
@@ -526,10 +540,11 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	 * can support the current CPU usage without triggering the up
 	 * policy. To be safe, we focus 10 points under the threshold.
 	 */
-	if (max_load < (dbs_tuners_ins.down_threshold - 10)) {
-		freq_target = (dbs_tuners_ins.freq_step * policy->max) / 100;
+	if (max_load_freq < (dbs_tuners_ins.down_threshold - dbs_tuners_ins.down_differential) * policy->cur) {
 
-		this_dbs_info->requested_freq -= freq_target;
+		freq_target = max_load_freq / (dbs_tuners_ins.down_threshold - dbs_tuners_ins.down_differential);
+
+		this_dbs_info->requested_freq = freq_target;
 		if (this_dbs_info->requested_freq < policy->min)
 			this_dbs_info->requested_freq = policy->min;
 
@@ -540,7 +555,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			return;
 
 		__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
-				CPUFREQ_RELATION_H);
+				CPUFREQ_RELATION_L);
 		return;
 	}
 }
@@ -628,6 +643,7 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		 */
 		if (dbs_enable == 1) {
 			unsigned int latency;
+
 			/* policy latency is in nS. Convert it to uS first */
 			latency = policy->cpuinfo.transition_latency / 1000;
 			if (latency == 0)
@@ -640,12 +656,6 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 				return rc;
 			}
 
-			/*
-			 * conservative does not implement micro like ondemand
-			 * governor, thus we are bound to jiffes/HZ
-			 */
-			min_sampling_rate =
-				MIN_SAMPLING_RATE_RATIO * jiffies_to_usecs(10);
 			/* Bring kernel and HW constraints together */
 			min_sampling_rate = max(min_sampling_rate,
 					MIN_LATENCY_MULTIPLIER * latency);
@@ -717,6 +727,29 @@ struct cpufreq_governor cpufreq_gov_conservative = {
 static int __init cpufreq_gov_dbs_init(void)
 {
 	int err;
+	cputime64_t wall;
+	u64 idle_time;
+	int cpu = get_cpu();
+
+	idle_time = get_cpu_idle_time_us(cpu, &wall);
+	put_cpu();
+	if (idle_time != -1ULL) {
+		/* Idle micro accounting is supported. Use finer thresholds */
+		dbs_tuners_ins.up_threshold = MICRO_FREQUENCY_UP_THRESHOLD;
+		dbs_tuners_ins.down_threshold = MICRO_FREQUENCY_DOWN_THRESHOLD;
+		dbs_tuners_ins.down_differential =
+					MICRO_FREQUENCY_DOWN_DIFFERENTIAL;
+		/*
+		 * In no_hz/micro accounting case we set the minimum frequency
+		 * not depending on HZ, but fixed (very low). The deferred
+		 * timer might skip some samples if idle/sleeping as needed.
+		*/
+		min_sampling_rate = MICRO_FREQUENCY_MIN_SAMPLE_RATE;
+	} else {
+		/* For correct statistics, we need 10 ticks for each measure */
+		min_sampling_rate =
+			MIN_SAMPLING_RATE_RATIO * jiffies_to_usecs(10);
+	}
 
 	kconservative_wq = create_workqueue("kconservative");
 	if (!kconservative_wq) {

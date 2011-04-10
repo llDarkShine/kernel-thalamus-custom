@@ -33,7 +33,7 @@
 #define DEF_FREQUENCY_DOWN_THRESHOLD		(20)
 #define DEF_FREQUENCY_DOWN_DIFFERENTIAL		(10)
 #define MICRO_FREQUENCY_MIN_SAMPLE_RATE		(10000)
-#define MICRO_FREQUENCY_DOWN_DIFFERENTIAL	(3)
+#define MICRO_FREQUENCY_DOWN_DIFFERENTIAL	(5)
 #define MICRO_FREQUENCY_UP_THRESHOLD		(95)
 #define MICRO_FREQUENCY_DOWN_THRESHOLD		(50)
 
@@ -542,7 +542,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	 */
 	if (max_load_freq < (dbs_tuners_ins.down_threshold - dbs_tuners_ins.down_differential) * policy->cur) {
 
-		freq_target = max_load_freq / (dbs_tuners_ins.down_threshold - dbs_tuners_ins.down_differential);
+		freq_target = max_load_freq / (dbs_tuners_ins.up_threshold - dbs_tuners_ins.down_differential);
 
 		this_dbs_info->requested_freq = freq_target;
 		if (this_dbs_info->requested_freq < policy->min)

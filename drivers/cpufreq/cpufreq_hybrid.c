@@ -36,13 +36,13 @@ struct cpufreq_governor cpufreq_gov_hybrid = {
 };
 
 
-static int __init cpufreq_gov_performance_init(void)
+static int __init cpufreq_gov_hybrid_init(void)
 {
 	return cpufreq_register_governor(&cpufreq_gov_hybrid);
 }
 
 
-static void __exit cpufreq_gov_performance_exit(void)
+static void __exit cpufreq_gov_hybrid_exit(void)
 {
 	cpufreq_unregister_governor(&cpufreq_gov_hybrid);
 }

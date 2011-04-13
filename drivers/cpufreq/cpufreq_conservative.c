@@ -34,8 +34,9 @@
 #define DEF_FREQUENCY_DOWN_DIFFERENTIAL		(10)
 #define MICRO_FREQUENCY_MIN_SAMPLE_RATE		(10000)
 #define MICRO_FREQUENCY_DOWN_DIFFERENTIAL	(5)
-#define MICRO_FREQUENCY_UP_THRESHOLD		(95)
-#define MICRO_FREQUENCY_DOWN_THRESHOLD		(50)
+#define MICRO_FREQUENCY_UP_THRESHOLD		(90)
+#define MICRO_FREQUENCY_DOWN_THRESHOLD		(40)
+#define DOWN_TARGET_LOAD			(65)
 
 /*
  * The polling frequency of this governor depends on the capability of
@@ -102,7 +103,7 @@ static struct dbs_tuners {
 	.down_differential = DEF_FREQUENCY_DOWN_DIFFERENTIAL,
 	.sampling_down_factor = DEF_SAMPLING_DOWN_FACTOR,
 	.ignore_nice = 0,
-	.freq_step = 10,
+	.freq_step = 5,
 };
 
 static inline cputime64_t get_cpu_idle_time_jiffy(unsigned int cpu,
@@ -542,7 +543,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	 */
 	if (max_load_freq < (dbs_tuners_ins.down_threshold - dbs_tuners_ins.down_differential) * policy->cur) {
 
-		freq_target = max_load_freq / (dbs_tuners_ins.up_threshold - dbs_tuners_ins.down_differential);
+		freq_target = max_load_freq / DOWN_TARGET_LOAD;
 
 		this_dbs_info->requested_freq = freq_target;
 		if (this_dbs_info->requested_freq < policy->min)

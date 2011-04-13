@@ -26,6 +26,7 @@ struct cpufreq_hybrid_cpuinfo {
 	struct timer_list timer;
 	
 	unsigned int target_freq;
+	unsigned int step_delta_freq; // step% * (max_frequency - min_frequency)
 	u64 prev_idle_time;
 	u64 prev_wall_time;
 	u64 last_freq_change;
@@ -47,6 +48,7 @@ struct cpufreq_hybrid_tuners {
     unsigned int up_step;
     unsigned int down_delay;
     unsigned int down_differential;
+    unsigned int optimal_load;
 } tuners = {
     .sample_rate	= DEFAULT_SAMPLE_RATE,
     .up_threshold 	= DEFAULT_UP_THRESHOLD,
@@ -72,26 +74,30 @@ static void cpufreq_hybrid_timer(unsigned long data)
 	this_cpuinfo->prev_idle_time = idle_time;
 	this_cpuinfo->prev_wall_time = wall_time;
 	
+	// calculate load percentage
 	if (delta_idle_time > delta_wall_time)
 		perc_load = 0;
 	else
 		perc_load = (100 * (delta_wall_time - delta_idle_time)) / delta_wall_time;
 	
 	if (perc_load > tuners.up_threshold) {
-	
+		// step the frequency up (using up_step)
 		this_cpuinfo->target_freq += (tuners.up_step * policy->max) / 100;
 		if (this_cpuinfo->target_freq > policy->max)
 			this_cpuinfo->target_freq = policy->max;
 		this_cpuinfo->last_freq_change = wall_time;
+
+		__cpufreq_driver_target(policy, this_cpuinfo->target_freq, CPUFREQ_RELATION_H);
 		
 	} else if ((perc_load < tuners.down_threshold) && 
 		    (cputime64_sub(wall_time, this_cpuinfo->last_freq_change) > tuners.down_delay)) {
-		    
+		// calculate optimal lower frequency
 		this_cpuinfo->target_freq = (perc_load * policy->cur) / (tuners.up_threshold - tuners.down_differential);
 		if (this_cpuinfo->target_freq < policy->min)
 			this_cpuinfo->target_freq = policy->min;
 		this_cpuinfo->last_freq_change = wall_time;
 		
+		__cpufreq_driver_target(policy, this_cpuinfo->target_freq, CPUFREQ_RELATION_L);
 	}
 	
 	// Schedule next sample
@@ -167,6 +173,15 @@ static int __init cpufreq_gov_hybrid_init(void)
 
 static void __exit cpufreq_gov_hybrid_exit(void)
 {
+	unsigned int i;
+	struct cpufreq_hybrid_cpuinfo *cpu_info;
+	
+	// Finalize CPU timers
+	for_each_possible_cpu(i) {
+		cpu_info = &per_cpu(cpuinfo, i);
+		del_timer_sync(&cpu_info->timer);
+	}
+	
 	cpufreq_unregister_governor(&cpufreq_gov_hybrid);
 }
 

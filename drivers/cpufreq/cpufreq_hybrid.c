@@ -26,11 +26,9 @@ static atomic_t active_count = ATOMIC_INIT(0);
 struct cpufreq_hybrid_cpuinfo {
 	struct cpufreq_policy *policy;
 	struct timer_list timer;
-
 	u64 prev_idle_time;
 	u64 prev_wall_time;
-	u64 last_freq_change;
-
+	unsigned long last_freq_change;
 	unsigned int enabled;
 };
 
@@ -48,16 +46,19 @@ static struct workqueue_struct *up_queue;
 static struct workqueue_struct *down_queue;
 
 #define DEFAULT_SAMPLE_RATE		(2)
+#define DEFAULT_DOWN_DELAY		(4)
 #define DEFAULT_UP_THRESHOLD		(80)
 #define DEFAULT_DOWN_THRESHOLD		(40)
 
 struct cpufreq_hybrid_tuners {
     unsigned int sample_rate;
+    unsigned int down_delay;
     unsigned int up_threshold;
     unsigned int down_threshold;
     unsigned int optimal_load;
 } tuners = {
     .sample_rate	= DEFAULT_SAMPLE_RATE,
+    .down_delay		= DEFAULT_DOWN_DELAY,
     .up_threshold 	= DEFAULT_UP_THRESHOLD,
     .down_threshold	= DEFAULT_DOWN_THRESHOLD,
 };
@@ -119,18 +120,19 @@ static void cpufreq_hybrid_timer( unsigned long data )
 		target_freq = (perc_load * policy->cur) / tuners.optimal_load;
 		if (target_freq > policy->max)
 			target_freq = policy->max;
-		this_cpuinfo->last_freq_change = wall_time;
+		this_cpuinfo->last_freq_change = jiffies;
 
 //		printk(KERN_DEBUG "CPUFreq UP - perc_load: %u target_freq: %u\n", perc_load, target_freq);
 		cpufreq_hybrid_enqueue_scale_work(policy, target_freq, CPUFREQ_RELATION_H);
 		
-	} else if ((perc_load < tuners.down_threshold) && (policy->cur != policy->min)) {
+	} else if ((perc_load < tuners.down_threshold) && (policy->cur != policy->min) &&
+		((jiffies - this_cpuinfo->last_freq_change) > tuners.down_delay)) {
 
 		// calculate optimal lower frequency
 		target_freq = (perc_load * policy->cur) / tuners.optimal_load;
 		if (target_freq < policy->min)
 			target_freq = policy->min;
-		this_cpuinfo->last_freq_change = wall_time;
+		this_cpuinfo->last_freq_change = jiffies;
 
 //		printk(KERN_DEBUG "CPUFreq DOWN - perc_load: %u target_freq: %u\n", perc_load, target_freq);
 		cpufreq_hybrid_enqueue_scale_work(policy, target_freq, CPUFREQ_RELATION_L);
@@ -152,9 +154,9 @@ static int cpufreq_governor_hybrid(struct cpufreq_policy *policy, unsigned int e
 
 		this_cpuinfo->policy = policy;
 		this_cpuinfo->prev_idle_time = get_cpu_idle_time_us(policy->cpu, &this_cpuinfo->prev_wall_time);
-		this_cpuinfo->last_freq_change = this_cpuinfo->prev_wall_time;
+		this_cpuinfo->last_freq_change = 0;
 		this_cpuinfo->enabled = 0;
-
+		// sample timer initialization
 		init_timer_deferrable(&this_cpuinfo->timer);
 		this_cpuinfo->timer.function = cpufreq_hybrid_timer;
 		this_cpuinfo->timer.data = policy->cpu;

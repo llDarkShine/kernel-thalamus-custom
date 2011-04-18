@@ -191,7 +191,7 @@ static int cpufreq_governor_hybrid(struct cpufreq_policy *policy, unsigned int e
 	return 0;
 }
 
-#ifdef CONFIG_CPU_FREQ_DEFAULT_GOV_HYBRID
+#ifndef CONFIG_CPU_FREQ_DEFAULT_GOV_HYBRID
 static
 #endif
 struct cpufreq_governor cpufreq_gov_hybrid = {

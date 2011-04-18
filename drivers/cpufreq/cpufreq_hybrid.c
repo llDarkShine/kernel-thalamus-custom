@@ -46,9 +46,9 @@ static struct workqueue_struct *up_queue;
 static struct workqueue_struct *down_queue;
 
 #define DEFAULT_SAMPLE_RATE		(2)
-#define DEFAULT_DOWN_DELAY		(4)
-#define DEFAULT_UP_THRESHOLD		(80)
-#define DEFAULT_DOWN_THRESHOLD		(40)
+#define DEFAULT_DOWN_DELAY		(0)
+#define DEFAULT_UP_THRESHOLD		(90)
+#define DEFAULT_DOWN_THRESHOLD		(30)
 
 struct cpufreq_hybrid_tuners {
     unsigned int sample_rate;
@@ -75,7 +75,7 @@ static void cpufreq_hybrid_scale_work( struct work_struct *work )
 
 static void cpufreq_hybrid_enqueue_scale_work( struct cpufreq_policy *policy, unsigned int target_freq, unsigned int relation )
 {
-	cpufreq_work_struct *work = (cpufreq_work_struct *)kmalloc(sizeof(cpufreq_work_struct), GFP_KERNEL);
+	cpufreq_work_struct *work = (cpufreq_work_struct *)kmalloc(sizeof(cpufreq_work_struct), GFP_ATOMIC);
 	if (work) {
 		INIT_WORK((struct work_struct *)work, cpufreq_hybrid_scale_work);
 		work->policy = policy;

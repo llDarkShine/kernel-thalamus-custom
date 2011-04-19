@@ -25,20 +25,13 @@ static atomic_t active_count = ATOMIC_INIT(0);
 
 struct cpufreq_hybrid_cpuinfo {
 	struct cpufreq_policy *policy;
-	struct timer_list timer;
+	struct delayed_work work;
 	u64 prev_idle_time;
 	u64 prev_wall_time;
 	unsigned long last_freq_change;
-	unsigned int enabled;
 };
 
 static DEFINE_PER_CPU(struct cpufreq_hybrid_cpuinfo, cpuinfo);
-
-typedef struct {
-	struct work_struct work;
-	struct cpufreq_policy *policy;
-	unsigned int target_freq;
-} cpufreq_work_struct;
 
 static struct workqueue_struct *work_queue;
 
@@ -60,31 +53,7 @@ struct cpufreq_hybrid_tuners {
     .down_threshold	= DEFAULT_DOWN_THRESHOLD,
 };
 
-static void cpufreq_hybrid_scale_work( struct work_struct *work )
-{
-	cpufreq_work_struct *scale_work = (cpufreq_work_struct *) work;
-	struct cpufreq_policy *policy = scale_work->policy;
-
-	if (policy->cur < scale_work->target_freq)
-	    __cpufreq_driver_target(policy, scale_work->target_freq, CPUFREQ_RELATION_H);
-	else
-	    __cpufreq_driver_target(policy, scale_work->target_freq, CPUFREQ_RELATION_L);
-
-	kfree((void *)work);
-}
-
-static void cpufreq_hybrid_enqueue_scale_work( struct cpufreq_policy *policy, unsigned int target_freq )
-{
-	cpufreq_work_struct *work = (cpufreq_work_struct *)kmalloc(sizeof(cpufreq_work_struct), GFP_ATOMIC);
-	if (work) {
-		INIT_WORK((struct work_struct *)work, cpufreq_hybrid_scale_work);
-		work->policy = policy;
-		work->target_freq = target_freq;
-		queue_work(work_queue, (struct work_struct *)work);
-	}
-}
-
-static void cpufreq_hybrid_timer( unsigned long data )
+static void cpufreq_hybrid_work( struct work_struct *work )
 {
 	u64 idle_time;
 	u64 wall_time;
@@ -92,18 +61,14 @@ static void cpufreq_hybrid_timer( unsigned long data )
 	unsigned int delta_wall_time;
 	unsigned int perc_load;
 	unsigned int target_freq;
-	struct cpufreq_hybrid_cpuinfo *this_cpuinfo = &per_cpu(cpuinfo, data);
+	unsigned int cpu = smp_processor_id();
+	struct cpufreq_hybrid_cpuinfo *this_cpuinfo = &per_cpu(cpuinfo, cpu);
 	struct cpufreq_policy *policy = this_cpuinfo->policy;
 
-	if (!this_cpuinfo->enabled)
-	    return;
-
 	// sample data
-	idle_time = get_cpu_idle_time_us(data, &wall_time);
+	idle_time = get_cpu_idle_time_us(cpu, &wall_time);
 	delta_idle_time = (unsigned int) cputime64_sub(idle_time, this_cpuinfo->prev_idle_time);
 	delta_wall_time = (unsigned int) cputime64_sub(wall_time, this_cpuinfo->prev_wall_time);
-	this_cpuinfo->prev_idle_time = idle_time;
-	this_cpuinfo->prev_wall_time = wall_time;
 
 	// calculate load percentage
 	if (delta_idle_time > delta_wall_time)
@@ -118,18 +83,22 @@ static void cpufreq_hybrid_timer( unsigned long data )
 
 		// calculate optimal frequency
 		target_freq = (perc_load * policy->cur) / tuners.optimal_load;
-		if (target_freq > policy->max)
-			target_freq = policy->max;
-		else if (target_freq < policy->min)
-			target_freq = policy->min;
-		this_cpuinfo->last_freq_change = jiffies;
 
-		cpufreq_hybrid_enqueue_scale_work(policy, target_freq);
+		if (target_freq > policy->cur) {
+			if (target_freq > policy->max)
+				target_freq = policy->max;
+			__cpufreq_driver_target(policy, target_freq, CPUFREQ_RELATION_H);
+		} else {
+			if (target_freq < policy->min)
+				target_freq = policy->min;
+			__cpufreq_driver_target(policy, target_freq, CPUFREQ_RELATION_L);
+		}
+		this_cpuinfo->last_freq_change = jiffies;
 	}
 	
 	// Schedule next sample
-	if (!timer_pending(&this_cpuinfo->timer))
-		mod_timer(&this_cpuinfo->timer, jiffies + tuners.sample_rate);
+	this_cpuinfo->prev_idle_time = get_cpu_idle_time_us(cpu, &this_cpuinfo->prev_wall_time);
+	queue_delayed_work_on(cpu, work_queue, &this_cpuinfo->work, tuners.sample_rate);
 }
 
 static int cpufreq_governor_hybrid(struct cpufreq_policy *policy, unsigned int event)
@@ -145,24 +114,20 @@ static int cpufreq_governor_hybrid(struct cpufreq_policy *policy, unsigned int e
 		this_cpuinfo->policy = policy;
 		this_cpuinfo->prev_idle_time = get_cpu_idle_time_us(policy->cpu, &this_cpuinfo->prev_wall_time);
 		this_cpuinfo->last_freq_change = 0;
-		this_cpuinfo->enabled = 0;
-		// sample timer initialization
-		init_timer_deferrable(&this_cpuinfo->timer);
-		this_cpuinfo->timer.function = cpufreq_hybrid_timer;
-		this_cpuinfo->timer.data = policy->cpu;
 
 		// create sysfs entries when first governor is started
 		if (atomic_inc_return(&active_count) == 1) {
 			// create sysfs entries here
 		}
-		this_cpuinfo->enabled = 1;
-		mod_timer(&this_cpuinfo->timer, jiffies + tuners.sample_rate);
+
+		INIT_DELAYED_WORK_DEFERRABLE(&this_cpuinfo->work, cpufreq_hybrid_work);
+		queue_delayed_work_on(policy->cpu, work_queue, &this_cpuinfo->work, tuners.sample_rate);
 		break;
 
 	case CPUFREQ_GOV_STOP:
 		printk(KERN_DEBUG "Stopping hybrid governor for cpu %u\n", policy->cpu);
-		this_cpuinfo->enabled = 0;
-		del_timer_sync(&this_cpuinfo->timer);
+		cancel_delayed_work_sync(&this_cpuinfo->work);
+
 		// remove sysfs entries when last governor is stopped
 		if (atomic_dec_and_test(&active_count)) {
 			// remove sysfs entries here

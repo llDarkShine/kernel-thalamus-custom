@@ -29,6 +29,8 @@ struct cpufreq_hybrid_cpuinfo {
 	u64 prev_idle_time;
 	u64 prev_wall_time;
 	unsigned long last_freq_change;
+	unsigned long full_load_samples;
+	unsigned long optimal_load;
 };
 
 static DEFINE_PER_CPU(struct cpufreq_hybrid_cpuinfo, cpuinfo);
@@ -75,14 +77,25 @@ static void cpufreq_hybrid_work( struct work_struct *work )
 		perc_load = 0;
 	else
 		perc_load = (100 * (delta_wall_time - delta_idle_time)) / delta_wall_time;
-		
 
 	if (((perc_load > tuners.up_threshold) && (policy->cur < policy->max)) ||
 	    ((perc_load < tuners.down_threshold) && (policy->cur > policy->min) &&
 		((jiffies - this_cpuinfo->last_freq_change) > tuners.down_delay))) {
 
 		// calculate optimal frequency
-		target_freq = (perc_load * policy->cur) / tuners.optimal_load;
+		if (perc_load == 100)
+			this_cpuinfo->full_load_samples++;
+		else
+			this_cpuinfo->full_load_samples = 0;
+
+		if ((perc_load == 100) && (this_cpuinfo->full_load_samples >= 3)) {
+			this_cpuinfo->optimal_load -= 10;
+			if (this_cpuinfo->optimal_load < (tuners.down_threshold + 10))
+				this_cpuinfo->optimal_load = tuners.down_threshold + 10;
+		} else
+			this_cpuinfo->optimal_load = tuners.optimal_load;
+
+		target_freq = (perc_load * policy->cur) / this_cpuinfo->optimal_load;
 
 		if (target_freq > policy->cur) {
 			if (target_freq > policy->max)
@@ -95,7 +108,7 @@ static void cpufreq_hybrid_work( struct work_struct *work )
 		}
 		this_cpuinfo->last_freq_change = jiffies;
 	}
-	
+
 	// Schedule next sample
 	this_cpuinfo->prev_idle_time = get_cpu_idle_time_us(cpu, &this_cpuinfo->prev_wall_time);
 	queue_delayed_work_on(cpu, work_queue, &this_cpuinfo->work, tuners.sample_rate);
@@ -114,6 +127,8 @@ static int cpufreq_governor_hybrid(struct cpufreq_policy *policy, unsigned int e
 		this_cpuinfo->policy = policy;
 		this_cpuinfo->prev_idle_time = get_cpu_idle_time_us(policy->cpu, &this_cpuinfo->prev_wall_time);
 		this_cpuinfo->last_freq_change = 0;
+		this_cpuinfo->full_load_samples = 0;
+		this_cpuinfo->optimal_load = tuners.optimal_load;
 
 		// create sysfs entries when first governor is started
 		if (atomic_inc_return(&active_count) == 1) {

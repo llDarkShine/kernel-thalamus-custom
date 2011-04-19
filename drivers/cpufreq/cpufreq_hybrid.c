@@ -43,7 +43,7 @@ typedef struct {
 static struct workqueue_struct *work_queue;
 
 #define DEFAULT_SAMPLE_RATE		(2)
-#define DEFAULT_DOWN_DELAY		(0)
+#define DEFAULT_DOWN_DELAY		(5)
 #define DEFAULT_UP_THRESHOLD		(90)
 #define DEFAULT_DOWN_THRESHOLD		(30)
 

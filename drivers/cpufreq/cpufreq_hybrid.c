@@ -12,12 +12,10 @@
 #include <linux/module.h>
 #include <linux/cpufreq.h>
 #include <asm/cputime.h>
-#include <linux/init.h>
 #include <linux/hrtimer.h>
-#include <linux/timer.h>
 #include <linux/tick.h>
+#include <linux/init.h>
 #include <linux/workqueue.h>
-#include <linux/slab.h>
 
 #define TRANSITION_LATENCY_LIMIT	(10 * 1000 * 1000)
 
@@ -41,18 +39,24 @@ static struct workqueue_struct *work_queue;
 #define DEFAULT_DOWN_DELAY		(5)
 #define DEFAULT_UP_THRESHOLD		(90)
 #define DEFAULT_DOWN_THRESHOLD		(30)
+#define DEFAULT_MAX_FULL_LOAD_SAMPLES	(3)
+#define DEFAULT_OPTIMAL_LOAD_CORRECTION	(5)
 
 struct cpufreq_hybrid_tuners {
     unsigned int sample_rate;
     unsigned int down_delay;
     unsigned int up_threshold;
     unsigned int down_threshold;
+    unsigned int max_full_load_samples;
     unsigned int optimal_load;
+    unsigned int optimal_load_correction;
 } tuners = {
     .sample_rate	= DEFAULT_SAMPLE_RATE,
     .down_delay		= DEFAULT_DOWN_DELAY,
     .up_threshold 	= DEFAULT_UP_THRESHOLD,
     .down_threshold	= DEFAULT_DOWN_THRESHOLD,
+    .max_full_load_samples = DEFAULT_MAX_FULL_LOAD_SAMPLES,
+    .optimal_load_correction = DEFAULT_OPTIMAL_LOAD_CORRECTION,
 };
 
 static void cpufreq_hybrid_work( struct work_struct *work )
@@ -88,8 +92,8 @@ static void cpufreq_hybrid_work( struct work_struct *work )
 		else
 			this_cpuinfo->full_load_samples = 0;
 
-		if ((perc_load == 100) && (this_cpuinfo->full_load_samples >= 3)) {
-			this_cpuinfo->optimal_load -= 10;
+		if ((perc_load == 100) && (this_cpuinfo->full_load_samples >= tuners.max_full_load_samples)) {
+			this_cpuinfo->optimal_load -= tuners.optimal_load_correction;
 			if (this_cpuinfo->optimal_load < (tuners.down_threshold + 10))
 				this_cpuinfo->optimal_load = tuners.down_threshold + 10;
 		} else

@@ -66,11 +66,14 @@ struct cpufreq_hybrid_tuners {
 static void cpufreq_hybrid_scale_work( struct work_struct *work )
 {
 	cpufreq_work_struct *scale_work = (cpufreq_work_struct *) work;
-
+	struct cpufreq_hybrid_cpuinfo *this_cpuinfo = &per_cpu(cpuinfo, scale_work->policy->cpu);
 //	printk( KERN_DEBUG "Executing CPUFreq scale work\n");
 	__cpufreq_driver_target(scale_work->policy, scale_work->target_freq, scale_work->relation);
-
 	kfree((void *)work);
+
+	// Schedule next sample
+	if (!timer_pending(&this_cpuinfo->timer))
+		mod_timer(&this_cpuinfo->timer, jiffies + tuners.sample_rate);
 }
 
 static void cpufreq_hybrid_enqueue_scale_work( struct cpufreq_policy *policy, unsigned int target_freq, unsigned int relation )
@@ -136,10 +139,7 @@ static void cpufreq_hybrid_timer( unsigned long data )
 
 //		printk(KERN_DEBUG "CPUFreq DOWN - perc_load: %u target_freq: %u\n", perc_load, target_freq);
 		cpufreq_hybrid_enqueue_scale_work(policy, target_freq, CPUFREQ_RELATION_L);
-	}
-
-	// Schedule next sample
-	if (!timer_pending(&this_cpuinfo->timer))
+	} else if (!timer_pending(&this_cpuinfo->timer))
 		mod_timer(&this_cpuinfo->timer, jiffies + tuners.sample_rate);
 }
 

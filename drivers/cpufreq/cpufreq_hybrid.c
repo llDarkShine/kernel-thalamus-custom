@@ -36,14 +36,11 @@ static DEFINE_PER_CPU(struct cpufreq_hybrid_cpuinfo, cpuinfo);
 
 typedef struct {
 	struct work_struct work;
-
 	struct cpufreq_policy *policy;
 	unsigned int target_freq;
-	unsigned int relation;
 } cpufreq_work_struct;
 
-static struct workqueue_struct *up_queue;
-static struct workqueue_struct *down_queue;
+static struct workqueue_struct *work_queue;
 
 #define DEFAULT_SAMPLE_RATE		(2)
 #define DEFAULT_DOWN_DELAY		(0)
@@ -66,28 +63,24 @@ struct cpufreq_hybrid_tuners {
 static void cpufreq_hybrid_scale_work( struct work_struct *work )
 {
 	cpufreq_work_struct *scale_work = (cpufreq_work_struct *) work;
-	struct cpufreq_hybrid_cpuinfo *this_cpuinfo = &per_cpu(cpuinfo, scale_work->policy->cpu);
-//	printk( KERN_DEBUG "Executing CPUFreq scale work\n");
-	__cpufreq_driver_target(scale_work->policy, scale_work->target_freq, scale_work->relation);
-	kfree((void *)work);
+	struct cpufreq_policy *policy = scale_work->policy;
 
-	// Schedule next sample
-	if (!timer_pending(&this_cpuinfo->timer))
-		mod_timer(&this_cpuinfo->timer, jiffies + tuners.sample_rate);
+	if (policy->cur < scale_work->target_freq)
+	    __cpufreq_driver_target(policy, scale_work->target_freq, CPUFREQ_RELATION_H);
+	else
+	    __cpufreq_driver_target(policy, scale_work->target_freq, CPUFREQ_RELATION_L);
+
+	kfree((void *)work);
 }
 
-static void cpufreq_hybrid_enqueue_scale_work( struct cpufreq_policy *policy, unsigned int target_freq, unsigned int relation )
+static void cpufreq_hybrid_enqueue_scale_work( struct cpufreq_policy *policy, unsigned int target_freq )
 {
 	cpufreq_work_struct *work = (cpufreq_work_struct *)kmalloc(sizeof(cpufreq_work_struct), GFP_ATOMIC);
 	if (work) {
 		INIT_WORK((struct work_struct *)work, cpufreq_hybrid_scale_work);
 		work->policy = policy;
 		work->target_freq = target_freq;
-		work->relation = relation;
-		if (relation == CPUFREQ_RELATION_H)
-			queue_work(up_queue, (struct work_struct *)work);
-		else
-			queue_work(down_queue, (struct work_struct *)work);
+		queue_work(work_queue, (struct work_struct *)work);
 	}
 }
 
@@ -105,6 +98,7 @@ static void cpufreq_hybrid_timer( unsigned long data )
 	if (!this_cpuinfo->enabled)
 	    return;
 
+	// sample data
 	idle_time = get_cpu_idle_time_us(data, &wall_time);
 	delta_idle_time = (unsigned int) cputime64_sub(idle_time, this_cpuinfo->prev_idle_time);
 	delta_wall_time = (unsigned int) cputime64_sub(wall_time, this_cpuinfo->prev_wall_time);
@@ -116,30 +110,25 @@ static void cpufreq_hybrid_timer( unsigned long data )
 		perc_load = 0;
 	else
 		perc_load = (100 * (delta_wall_time - delta_idle_time)) / delta_wall_time;
+		
 
-	if ((perc_load > tuners.up_threshold) && (policy->cur != policy->max)) {
+	if (((perc_load > tuners.up_threshold) && (policy->cur < policy->max)) ||
+	    ((perc_load < tuners.down_threshold) && (policy->cur > policy->min) &&
+		((jiffies - this_cpuinfo->last_freq_change) > tuners.down_delay))) {
 
 		// calculate optimal frequency
 		target_freq = (perc_load * policy->cur) / tuners.optimal_load;
 		if (target_freq > policy->max)
 			target_freq = policy->max;
-		this_cpuinfo->last_freq_change = jiffies;
-
-//		printk(KERN_DEBUG "CPUFreq UP - perc_load: %u target_freq: %u\n", perc_load, target_freq);
-		cpufreq_hybrid_enqueue_scale_work(policy, target_freq, CPUFREQ_RELATION_H);
-		
-	} else if ((perc_load < tuners.down_threshold) && (policy->cur != policy->min) &&
-		((jiffies - this_cpuinfo->last_freq_change) > tuners.down_delay)) {
-
-		// calculate optimal lower frequency
-		target_freq = (perc_load * policy->cur) / tuners.optimal_load;
-		if (target_freq < policy->min)
+		else if (target_freq < policy->min)
 			target_freq = policy->min;
 		this_cpuinfo->last_freq_change = jiffies;
 
-//		printk(KERN_DEBUG "CPUFreq DOWN - perc_load: %u target_freq: %u\n", perc_load, target_freq);
-		cpufreq_hybrid_enqueue_scale_work(policy, target_freq, CPUFREQ_RELATION_L);
-	} else if (!timer_pending(&this_cpuinfo->timer))
+		cpufreq_hybrid_enqueue_scale_work(policy, target_freq);
+	}
+	
+	// Schedule next sample
+	if (!timer_pending(&this_cpuinfo->timer))
 		mod_timer(&this_cpuinfo->timer, jiffies + tuners.sample_rate);
 }
 
@@ -152,6 +141,7 @@ static int cpufreq_governor_hybrid(struct cpufreq_policy *policy, unsigned int e
 		if ((!cpu_online(policy->cpu)) || (!policy->cur))
 			return -EINVAL;
 
+		printk(KERN_DEBUG "Starting hybrid governor for cpu %u\n", policy->cpu);
 		this_cpuinfo->policy = policy;
 		this_cpuinfo->prev_idle_time = get_cpu_idle_time_us(policy->cpu, &this_cpuinfo->prev_wall_time);
 		this_cpuinfo->last_freq_change = 0;
@@ -170,6 +160,7 @@ static int cpufreq_governor_hybrid(struct cpufreq_policy *policy, unsigned int e
 		break;
 
 	case CPUFREQ_GOV_STOP:
+		printk(KERN_DEBUG "Stopping hybrid governor for cpu %u\n", policy->cpu);
 		this_cpuinfo->enabled = 0;
 		del_timer_sync(&this_cpuinfo->timer);
 		// remove sysfs entries when last governor is stopped
@@ -205,18 +196,14 @@ static int __init cpufreq_gov_hybrid_init(void)
 {
 	tuners.optimal_load = tuners.up_threshold - 10;
 
-	up_queue = create_rt_workqueue("khybrid_up");
-	down_queue = create_workqueue("khybrid_down");
-
+	work_queue = create_rt_workqueue("khybrid");
 	return cpufreq_register_governor(&cpufreq_gov_hybrid);
 }
 
 static void __exit cpufreq_gov_hybrid_exit(void)
 {
 	cpufreq_unregister_governor(&cpufreq_gov_hybrid);
-
-	destroy_workqueue(up_queue);
-	destroy_workqueue(down_queue);
+	destroy_workqueue(work_queue);
 }
 
 MODULE_AUTHOR("Michal Potrzebicz <m.potrzebicz@gmail.com>");

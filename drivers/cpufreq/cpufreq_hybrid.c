@@ -35,8 +35,8 @@ static DEFINE_PER_CPU(struct cpufreq_hybrid_cpuinfo, cpuinfo);
 
 static struct workqueue_struct *work_queue;
 
-#define DEFAULT_SAMPLE_RATE		(2)
-#define DEFAULT_DOWN_DELAY		(5)
+#define DEFAULT_SAMPLE_RATE		(2) // jiffies
+#define DEFAULT_DOWN_DELAY_SAMPLES	(2)
 #define DEFAULT_UP_THRESHOLD		(90)
 #define DEFAULT_DOWN_THRESHOLD		(30)
 #define DEFAULT_MAX_FULL_LOAD_SAMPLES	(3)
@@ -47,7 +47,7 @@ static struct workqueue_struct *work_queue;
 
 struct cpufreq_hybrid_tuners {
     unsigned int sample_rate;
-    unsigned int down_delay;
+    unsigned int down_delay_samples;
     unsigned int up_threshold;
     unsigned int down_threshold;
     unsigned int max_full_load_samples;
@@ -55,7 +55,7 @@ struct cpufreq_hybrid_tuners {
     unsigned int optimal_load_correction;
 } tuners = {
     .sample_rate	= DEFAULT_SAMPLE_RATE,
-    .down_delay		= DEFAULT_DOWN_DELAY,
+    .down_delay_samples	= DEFAULT_DOWN_DELAY_SAMPLES,
     .up_threshold 	= DEFAULT_UP_THRESHOLD,
     .down_threshold	= DEFAULT_DOWN_THRESHOLD,
     .max_full_load_samples = DEFAULT_MAX_FULL_LOAD_SAMPLES,
@@ -87,7 +87,8 @@ static void cpufreq_hybrid_work( struct work_struct *work )
 
 	if (((perc_load > tuners.up_threshold) && (policy->cur < policy->max)) ||
 	    ((perc_load < tuners.down_threshold) && (policy->cur > policy->min) &&
-		((jiffies - this_cpuinfo->last_freq_change) > tuners.down_delay))) {
+		time_after(jiffies, this_cpuinfo->last_freq_change +
+		    (tuners.down_delay_samples * tuners.sample_rate)))) {
 
 		// calculate optimal frequency
 		if (perc_load == 100)

@@ -42,6 +42,9 @@ static struct workqueue_struct *work_queue;
 #define DEFAULT_MAX_FULL_LOAD_SAMPLES	(3)
 #define DEFAULT_OPTIMAL_LOAD_CORRECTION	(5)
 
+#define MIN_LATENCY_MULTIPLIER		(100)
+#define LATENCY_MULTIPLIER		(1000)
+
 struct cpufreq_hybrid_tuners {
     unsigned int sample_rate;
     unsigned int down_delay;
@@ -136,6 +139,22 @@ static int cpufreq_governor_hybrid(struct cpufreq_policy *policy, unsigned int e
 
 		// create sysfs entries when first governor is started
 		if (atomic_inc_return(&active_count) == 1) {
+			unsigned int latency;
+			unsigned int min_sampling_rate;
+
+			// policy latency is in ns. Convert it to us
+			latency = policy->cpuinfo.transition_latency / 1000;
+			if (latency == 0)
+				latency = 1;
+			printk(KERN_DEBUG "CPU latency = %u us\n", latency);
+			min_sampling_rate = jiffies_to_usecs(tuners.sample_rate);
+			printk(KERN_DEBUG "Default sampling rate = %u us (%u jiffies)\n", min_sampling_rate, tuners.sample_rate);
+
+			/* Bring kernel and HW constraints together */
+			min_sampling_rate = max(min_sampling_rate, MIN_LATENCY_MULTIPLIER * latency);
+			tuners.sample_rate = usecs_to_jiffies(
+			    max(min_sampling_rate, latency * LATENCY_MULTIPLIER));
+			printk(KERN_DEBUG "Setting sample rate to %u jiffies\n", tuners.sample_rate);
 			// create sysfs entries here
 		}
 

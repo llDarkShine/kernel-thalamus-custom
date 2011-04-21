@@ -188,6 +188,11 @@ static void msm_timer_set_mode(enum clock_event_mode mode,
 		clock->offset = -msm_read_timer_count(clock) + clock->stopped_tick;
 		msm_active_clock = clock;
 		writel(TIMER_ENABLE_EN, clock->regbase + TIMER_ENABLE);
+		if (get_irq_chip(clock->irq.irq) &&
+		    get_irq_chip(clock->irq.irq)->irq_unmask) {
+			get_irq_chip(clock->irq.irq)->irq_unmask(
+				irq_get_irq_data(clock->irq.irq));
+		}
 		break;
 	case CLOCK_EVT_MODE_UNUSED:
 	case CLOCK_EVT_MODE_SHUTDOWN:
@@ -197,6 +202,11 @@ static void msm_timer_set_mode(enum clock_event_mode mode,
 		clock->stopped_tick = (msm_read_timer_count(clock) +
 					clock->offset) >> clock->shift;
 		writel(0, clock->regbase + TIMER_ENABLE);
+		if (get_irq_chip(clock->irq.irq) &&
+		    get_irq_chip(clock->irq.irq)->irq_mask) {
+			get_irq_chip(clock->irq.irq)->irq_mask(
+				irq_get_irq_data(clock->irq.irq));
+		}
 		break;
 	}
 	local_irq_restore(irq_flags);
@@ -693,6 +703,9 @@ static void __init msm_timer_init(void)
 		if (res)
 			printk(KERN_ERR "msm_timer_init: setup_irq "
 			       "failed for %s\n", cs->name);
+
+		get_irq_chip(clock->irq.irq)->irq_mask(irq_get_irq_data(
+								clock->irq.irq));
 
 		clockevents_register_device(ce);
 	}

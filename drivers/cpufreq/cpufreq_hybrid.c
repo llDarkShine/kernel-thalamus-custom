@@ -36,7 +36,7 @@ static DEFINE_PER_CPU(struct cpufreq_hybrid_cpuinfo, cpuinfo);
 static struct workqueue_struct *work_queue;
 
 #define DEFAULT_SAMPLE_RATE		(2) // jiffies
-#define DEFAULT_DOWN_DELAY_SAMPLES	(2)
+#define DEFAULT_DOWN_DELAY_SAMPLES	(0)
 #define DEFAULT_UP_THRESHOLD		(90)
 #define DEFAULT_DOWN_THRESHOLD		(30)
 #define DEFAULT_MAX_FULL_LOAD_SAMPLES	(3)
@@ -105,15 +105,15 @@ static void cpufreq_hybrid_work( struct work_struct *work )
 
 		target_freq = (perc_load * policy->cur) / this_cpuinfo->optimal_load;
 
-		if (target_freq > policy->cur) {
-			if (target_freq > policy->max)
-				target_freq = policy->max;
-			__cpufreq_driver_target(policy, target_freq, CPUFREQ_RELATION_H);
-		} else {
-			if (target_freq < policy->min)
-				target_freq = policy->min;
-			__cpufreq_driver_target(policy, target_freq, CPUFREQ_RELATION_L);
-		}
+		if (target_freq > policy->max)
+			target_freq = policy->max;
+		if (target_freq < policy->min)
+			target_freq = policy->min;
+
+		// we want to get at least the frequency we calculated
+		// therefore CPUFREQ_RELATION_L is used in all cases
+		// (see linux/cpufreq.h)
+		__cpufreq_driver_target(policy, target_freq, CPUFREQ_RELATION_L);
 		this_cpuinfo->last_freq_change = jiffies;
 	}
 

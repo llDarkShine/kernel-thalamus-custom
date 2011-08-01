@@ -1549,6 +1549,7 @@ struct audio_client *q6audio_open_pcm(uint32_t bufsz, uint32_t rate,
 
 	if (ac->flags & AUDIO_FLAG_WRITE) {
 		if (audio_rx_path_refcount == 1) {
+#ifndef CONFIG_MSM_QDSP6_CALLREC
 			if (audio_rx_path_id) {
 				adie_enable();
 				adie_set_path(adie, audio_rx_path_id, ADIE_PATH_RX);

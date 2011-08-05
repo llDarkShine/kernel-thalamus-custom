@@ -72,8 +72,9 @@ struct clkctl_acpu_speed {
 #define SRC_PLL1	3 /* 768 MHz */
 
 struct clkctl_acpu_speed acpu_freq_tbl[] = {
-        {  19200, CCTL(CLK_TCXO, 1),            SRC_RAW, 0, 0, 950, 14000 },
-        { 122500, CCTL(CLK_MODEM_PLL, 2),       SRC_RAW, 0, 0, 950, 14000 },
+        {  19200, CCTL(CLK_TCXO, 1),            SRC_RAW, 0, 0, 900, 14000 },
+        {  61250, CCTL(CLK_MODEM_PLL, 4),       SRC_RAW, 0, 0, 900, 14000 },
+        { 122500, CCTL(CLK_MODEM_PLL, 2),       SRC_RAW, 0, 0, 950, 29000 },
         { 245000, CCTL(CLK_MODEM_PLL, 1),       SRC_RAW, 0, 0, 950, 29000 },
         { 307200, CCTL(CLK_TCXO, 1),            SRC_SCPLL, 0x08, 0, 950, 58000 },
         { 384000, CCTL(CLK_TCXO, 1),            SRC_SCPLL, 0x0A, 0, 975, 58000 },
@@ -100,7 +101,7 @@ struct clkctl_acpu_speed *acpu_stby = &acpu_freq_tbl[2];
 #define IS_ACPU_STANDBY(x)	(((x)->clk_cfg == acpu_stby->clk_cfg) && \
 				 ((x)->clk_sel == acpu_stby->clk_sel))
 
-struct clkctl_acpu_speed *acpu_mpll = &acpu_freq_tbl[2];
+struct clkctl_acpu_speed *acpu_mpll = &acpu_freq_tbl[3];
 
 #ifdef CONFIG_CPU_FREQ_TABLE
 static struct cpufreq_frequency_table freq_table[ARRAY_SIZE(acpu_freq_tbl)];

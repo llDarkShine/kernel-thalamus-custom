@@ -97,7 +97,7 @@ struct clkctl_acpu_speed acpu_freq_tbl[] = {
  *
  * Currently: MPLL
  */
-struct clkctl_acpu_speed *acpu_stby = &acpu_freq_tbl[2];
+struct clkctl_acpu_speed *acpu_stby = &acpu_freq_tbl[1];
 #define IS_ACPU_STANDBY(x)	(((x)->clk_cfg == acpu_stby->clk_cfg) && \
 				 ((x)->clk_sel == acpu_stby->clk_sel))
 

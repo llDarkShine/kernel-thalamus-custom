@@ -72,20 +72,23 @@ struct clkctl_acpu_speed {
 #define SRC_PLL1	3 /* 768 MHz */
 
 struct clkctl_acpu_speed acpu_freq_tbl[] = {
-        {  19200, CCTL(CLK_TCXO, 1),            SRC_RAW, 0, 0, 900, 14000 },
-        {  61250, CCTL(CLK_MODEM_PLL, 4),       SRC_RAW, 0, 0, 900, 14000 },
+        {  19200, CCTL(CLK_TCXO, 1),            SRC_RAW, 0, 0, 950, 14000 },
+        //
+        {  30625, CCTL(CLK_MODEM_PLL, 8),	SRC_RAW, 0, 0, 950, 14000 },
+        {  61250, CCTL(CLK_MODEM_PLL, 4),       SRC_RAW, 0, 0, 950, 14000 },
         { 122500, CCTL(CLK_MODEM_PLL, 2),       SRC_RAW, 0, 0, 950, 29000 },
-        { 245000, CCTL(CLK_MODEM_PLL, 1),       SRC_RAW, 0, 0, 950, 29000 },
-        { 307200, CCTL(CLK_TCXO, 1),            SRC_SCPLL, 0x08, 0, 950, 58000 },
-        { 384000, CCTL(CLK_TCXO, 1),            SRC_SCPLL, 0x0A, 0, 975, 58000 },
-        { 460800, CCTL(CLK_TCXO, 1),            SRC_SCPLL, 0x0C, 0, 1000, 117000 },
+        { 245000, CCTL(CLK_MODEM_PLL, 1),       SRC_RAW, 0, 0, 975, 29000 },
+        { 307200, CCTL(CLK_TCXO, 1),            SRC_SCPLL, 0x08, 0, 975, 58000 },
+        { 384000, CCTL(CLK_TCXO, 1),            SRC_SCPLL, 0x0A, 0, 1000, 58000 },
+        { 460800, CCTL(CLK_TCXO, 1),            SRC_SCPLL, 0x0C, 0, 1025, 117000 },
         { 537600, CCTL(CLK_TCXO, 1),            SRC_SCPLL, 0x0E, 0, 1025, 117000 },
         { 614400, CCTL(CLK_TCXO, 1),            SRC_SCPLL, 0x10, 0, 1075, 117000 },
         { 691200, CCTL(CLK_TCXO, 1),            SRC_SCPLL, 0x12, 0, 1125, 117000 },
         { 768000, CCTL(CLK_TCXO, 1),            SRC_SCPLL, 0x14, 0, 1175, 128000 },
         { 844800, CCTL(CLK_TCXO, 1),            SRC_SCPLL, 0x16, 0, 1225, 128000 },
         { 921600, CCTL(CLK_TCXO, 1),            SRC_SCPLL, 0x18, 0, 1250, 128000 },
-        { 998400, CCTL(CLK_TCXO, 1),            SRC_SCPLL, 0x1A, 0, 1250, 128000 },
+        { 998400, CCTL(CLK_TCXO, 1),            SRC_SCPLL, 0x1A, 0, 1275, 128000 },
+        // OC
 	{ 1036800, CCTL(CLK_TCXO, 1),		SRC_SCPLL, 0x1B, 0, 1275, 128000 },
 	{ 1075200, CCTL(CLK_TCXO, 1),		SRC_SCPLL, 0x1C, 0, 1275, 128000 },
 	{ 1113600, CCTL(CLK_TCXO, 1),		SRC_SCPLL, 0x1D, 0, 1275, 128000 },
@@ -101,7 +104,7 @@ struct clkctl_acpu_speed *acpu_stby = &acpu_freq_tbl[1];
 #define IS_ACPU_STANDBY(x)	(((x)->clk_cfg == acpu_stby->clk_cfg) && \
 				 ((x)->clk_sel == acpu_stby->clk_sel))
 
-struct clkctl_acpu_speed *acpu_mpll = &acpu_freq_tbl[3];
+struct clkctl_acpu_speed *acpu_mpll = &acpu_freq_tbl[4];
 
 #ifdef CONFIG_CPU_FREQ_TABLE
 static struct cpufreq_frequency_table freq_table[ARRAY_SIZE(acpu_freq_tbl)];

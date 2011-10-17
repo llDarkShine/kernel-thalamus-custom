@@ -36,10 +36,11 @@ static DEFINE_PER_CPU(struct cpufreq_hybrid_cpuinfo, cpuinfo);
 static struct workqueue_struct *work_queue;
 
 #define DEFAULT_SAMPLE_RATE		(2) // jiffies
-#define DEFAULT_DOWN_DELAY_SAMPLES	(0)
+#define DEFAULT_DOWN_DELAY_SAMPLES	(1)
 #define DEFAULT_UP_THRESHOLD		(90)
 #define DEFAULT_DOWN_THRESHOLD		(30)
 #define DEFAULT_MAX_FULL_LOAD_SAMPLES	(1)
+#define DEFAULT_OPTIMAL_LOAD		(60)
 #define DEFAULT_OPTIMAL_LOAD_CORRECTION	(5)
 
 #define MIN_LATENCY_MULTIPLIER		(100)
@@ -54,12 +55,13 @@ struct cpufreq_hybrid_tuners {
     unsigned int optimal_load;
     unsigned int optimal_load_correction;
 } tuners = {
-    .sample_rate	= DEFAULT_SAMPLE_RATE,
-    .down_delay_samples	= DEFAULT_DOWN_DELAY_SAMPLES,
-    .up_threshold 	= DEFAULT_UP_THRESHOLD,
-    .down_threshold	= DEFAULT_DOWN_THRESHOLD,
-    .max_full_load_samples = DEFAULT_MAX_FULL_LOAD_SAMPLES,
-    .optimal_load_correction = DEFAULT_OPTIMAL_LOAD_CORRECTION,
+    .sample_rate		= DEFAULT_SAMPLE_RATE,
+    .down_delay_samples		= DEFAULT_DOWN_DELAY_SAMPLES,
+    .up_threshold 		= DEFAULT_UP_THRESHOLD,
+    .down_threshold		= DEFAULT_DOWN_THRESHOLD,
+    .max_full_load_samples 	= DEFAULT_MAX_FULL_LOAD_SAMPLES,
+    .optimal_load 		= DEFAULT_OPTIMAL_LOAD,
+    .optimal_load_correction 	= DEFAULT_OPTIMAL_LOAD_CORRECTION,
 };
 
 static void cpufreq_hybrid_work( struct work_struct *work )

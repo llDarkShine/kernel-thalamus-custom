@@ -36,12 +36,12 @@ static DEFINE_PER_CPU(struct cpufreq_hybrid_cpuinfo, cpuinfo);
 static struct workqueue_struct *work_queue;
 
 #define DEFAULT_SAMPLE_RATE		(2) // jiffies
-#define DEFAULT_DOWN_DELAY_SAMPLES	(1)
+#define DEFAULT_DOWN_DELAY_SAMPLES	(0)
 #define DEFAULT_UP_THRESHOLD		(90)
-#define DEFAULT_DOWN_THRESHOLD		(30)
+#define DEFAULT_DOWN_THRESHOLD		(10)
 #define DEFAULT_MAX_FULL_LOAD_SAMPLES	(1)
-#define DEFAULT_OPTIMAL_LOAD		(60)
-#define DEFAULT_OPTIMAL_LOAD_CORRECTION	(5)
+#define DEFAULT_OPTIMAL_LOAD		(40)
+#define DEFAULT_OPTIMAL_LOAD_CORRECTION	(10)
 
 #define MIN_LATENCY_MULTIPLIER		(100)
 #define LATENCY_MULTIPLIER		(1000)
@@ -100,8 +100,8 @@ static void cpufreq_hybrid_work( struct work_struct *work )
 
 		if ((perc_load == 100) && (this_cpuinfo->full_load_samples >= tuners.max_full_load_samples)) {
 			this_cpuinfo->optimal_load -= tuners.optimal_load_correction;
-			if (this_cpuinfo->optimal_load < (tuners.down_threshold + 10))
-				this_cpuinfo->optimal_load = tuners.down_threshold + 10;
+			if (this_cpuinfo->optimal_load < (tuners.down_threshold + 5))
+				this_cpuinfo->optimal_load = tuners.down_threshold + 5;
 		} else
 			this_cpuinfo->optimal_load = tuners.optimal_load;
 

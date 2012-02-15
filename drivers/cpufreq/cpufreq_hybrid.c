@@ -26,9 +26,6 @@ struct cpufreq_hybrid_cpuinfo {
 	struct delayed_work work;
 	u64 prev_idle_time;
 	u64 prev_wall_time;
-	unsigned long last_freq_change;
-	unsigned long full_load_samples;
-	unsigned long optimal_load;
 };
 
 static DEFINE_PER_CPU(struct cpufreq_hybrid_cpuinfo, cpuinfo);
@@ -36,32 +33,23 @@ static DEFINE_PER_CPU(struct cpufreq_hybrid_cpuinfo, cpuinfo);
 static struct workqueue_struct *work_queue;
 
 #define DEFAULT_SAMPLE_RATE		(2) // jiffies
-#define DEFAULT_DOWN_DELAY_SAMPLES	(0)
-#define DEFAULT_UP_THRESHOLD		(90)
-#define DEFAULT_DOWN_THRESHOLD		(10)
-#define DEFAULT_MAX_FULL_LOAD_SAMPLES	(1)
-#define DEFAULT_OPTIMAL_LOAD		(40)
-#define DEFAULT_OPTIMAL_LOAD_CORRECTION	(10)
+#define DEFAULT_UP_THRESHOLD		(80)
+#define DEFAULT_DOWN_THRESHOLD		(20)
+#define DEFAULT_OPTIMAL_LOAD		(50)
 
 #define MIN_LATENCY_MULTIPLIER		(100)
 #define LATENCY_MULTIPLIER		(1000)
 
 struct cpufreq_hybrid_tuners {
     unsigned int sample_rate;
-    unsigned int down_delay_samples;
     unsigned int up_threshold;
     unsigned int down_threshold;
-    unsigned int max_full_load_samples;
     unsigned int optimal_load;
-    unsigned int optimal_load_correction;
 } tuners = {
     .sample_rate		= DEFAULT_SAMPLE_RATE,
-    .down_delay_samples		= DEFAULT_DOWN_DELAY_SAMPLES,
     .up_threshold 		= DEFAULT_UP_THRESHOLD,
     .down_threshold		= DEFAULT_DOWN_THRESHOLD,
-    .max_full_load_samples 	= DEFAULT_MAX_FULL_LOAD_SAMPLES,
     .optimal_load 		= DEFAULT_OPTIMAL_LOAD,
-    .optimal_load_correction 	= DEFAULT_OPTIMAL_LOAD_CORRECTION,
 };
 
 static void cpufreq_hybrid_work( struct work_struct *work )
@@ -88,24 +76,9 @@ static void cpufreq_hybrid_work( struct work_struct *work )
 		perc_load = (100 * (delta_wall_time - delta_idle_time)) / delta_wall_time;
 
 	if (((perc_load > tuners.up_threshold) && (policy->cur < policy->max)) ||
-	    ((perc_load < tuners.down_threshold) && (policy->cur > policy->min) &&
-		time_after(jiffies, this_cpuinfo->last_freq_change +
-		    (tuners.down_delay_samples * tuners.sample_rate)))) {
+	    ((perc_load < tuners.down_threshold) && (policy->cur > policy->min) )) {
 
-		// calculate optimal frequency
-		if (perc_load == 100)
-			this_cpuinfo->full_load_samples++;
-		else
-			this_cpuinfo->full_load_samples = 0;
-
-		if ((perc_load == 100) && (this_cpuinfo->full_load_samples >= tuners.max_full_load_samples)) {
-			this_cpuinfo->optimal_load -= tuners.optimal_load_correction;
-			if (this_cpuinfo->optimal_load < (tuners.down_threshold + 5))
-				this_cpuinfo->optimal_load = tuners.down_threshold + 5;
-		} else
-			this_cpuinfo->optimal_load = tuners.optimal_load;
-
-		target_freq = (perc_load * policy->cur) / this_cpuinfo->optimal_load;
+		target_freq = (perc_load * policy->cur) / tuners.optimal_load;
 
 		if (target_freq > policy->max)
 			target_freq = policy->max;
@@ -116,7 +89,6 @@ static void cpufreq_hybrid_work( struct work_struct *work )
 		// therefore CPUFREQ_RELATION_L is used in all cases
 		// (see linux/cpufreq.h)
 		__cpufreq_driver_target(policy, target_freq, CPUFREQ_RELATION_L);
-		this_cpuinfo->last_freq_change = jiffies;
 	}
 
 	// Schedule next sample
@@ -136,9 +108,6 @@ static int cpufreq_governor_hybrid(struct cpufreq_policy *policy, unsigned int e
 		printk(KERN_DEBUG "Starting hybrid governor for cpu %u\n", policy->cpu);
 		this_cpuinfo->policy = policy;
 		this_cpuinfo->prev_idle_time = get_cpu_idle_time_us(policy->cpu, &this_cpuinfo->prev_wall_time);
-		this_cpuinfo->last_freq_change = 0;
-		this_cpuinfo->full_load_samples = 0;
-		this_cpuinfo->optimal_load = tuners.optimal_load;
 
 		// create sysfs entries when first governor is started
 		if (atomic_inc_return(&active_count) == 1) {
@@ -200,8 +169,6 @@ struct cpufreq_governor cpufreq_gov_hybrid = {
 
 static int __init cpufreq_gov_hybrid_init(void)
 {
-	tuners.optimal_load = tuners.up_threshold - 10;
-
 	work_queue = create_rt_workqueue("khybrid");
 	return cpufreq_register_governor(&cpufreq_gov_hybrid);
 }
